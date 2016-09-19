@@ -1,0 +1,232 @@
+diff --git a/README.md b/README.md
+index d7ba0af..fa58fea 100644
+--- a/README.md
++++ b/README.md
+@@ -18,6 +18,7 @@ This plugin was based on this Apache [project](https://github.com/apache/cordova
+ - [Properties](#properties)
+  - [Keyboard.isVisible](#keyboardisvisible)
+  - [Keyboard.automaticScrollToTopOnHiding](#keyboardautomaticscrolltotoponhiding)
++ - [Keyboard.onKeyboardAnimate](#keyboardonkeyboardanimate)
+ - [Events](#events)
+  - [keyboardDidShow](#keyboarddidshow)
+  - [keyboardDidHide](#keyboarddidhide)
+@@ -174,6 +175,36 @@ after keyboard is hiding.
+ 
+ - iOS
+ 
++## Keyboard.onKeyboardAnimate
++
++Assign a function that will handle content animation in the browser
++
++    Keyboard.onKeyboardAnimate = function(fromHeight, toHeight, animationDurationInMs, animationCompleteCallback)
++    {    
++        // Example with jQuery (http://jquery.com/) and Velocity.JS (http://julian.com/research/velocity/)
++        $('body').velocity({height: [to, from]}, {duration: animationDurationInMS, easing: "easeOutQuad", complete: function()
++        {
++            // Tells the plugin that client side has finished animation
++            animationCompleteCallback();
++        }});
++    };
++
++#### Description
++
++Assign a function that will handle animation when the keyboard appears and disappears.
++Remember to execute the provided callback to let the plugin know when animation has finished.
++The parameters given is which height the webview will animate from and to, the duration for which the keyboard will animate and a callback method to call when the animation has been completed.
++
++Worth noting is that window.resize will be triggered after animation has been completed when keyboard is showing, but before animation is started when hiding.
++This is due to the fact that the webview will resize after animation has been completed when the keyboard is appearing so that the animation is not clipped, and
++when the keyboard is hiding it will resize to the full height so that the animation out can be completed without clipping as well.
++
++Thanks to [@glyuck](https://github.com/glyuck) for this approach from his project [GLKAnimateWebViewFrame](https://github.com/glyuck/GLKAnimateWebViewFrame) which is the base for this feature
++
++#### Supported Platforms
++
++- iOS
++
+ # Events
+ 
+ ## keyboardDidShow
+diff --git a/src/ios/CDVKeyboard.h b/src/ios/CDVKeyboard.h
+index 0b68cc5..7745940 100644
+--- a/src/ios/CDVKeyboard.h
++++ b/src/ios/CDVKeyboard.h
+@@ -39,5 +39,7 @@
+ - (void)disableScrollingInShrinkView:(CDVInvokedUrlCommand*)command;
+ - (void)hideFormAccessoryBar:(CDVInvokedUrlCommand*)command;
+ - (void)hide:(CDVInvokedUrlCommand*)command;
++- (void)animationStart:(CDVInvokedUrlCommand *)command;
++- (void)animationComplete:(CDVInvokedUrlCommand *)command;
+ 
+ @end
+diff --git a/src/ios/CDVKeyboard.m b/src/ios/CDVKeyboard.m
+index acd039a..b3a434c 100644
+--- a/src/ios/CDVKeyboard.m
++++ b/src/ios/CDVKeyboard.m
+@@ -31,7 +31,20 @@ @interface CDVKeyboard () <UIScrollViewDelegate>
+ 
+ @end
+ 
+-@implementation CDVKeyboard
++@interface AnimationDetails : NSObject
++@property (nonatomic, readwrite, assign) CGFloat from;
++@property (nonatomic, readwrite, assign) CGFloat to;
++@property (nonatomic, readwrite, assign) CGRect screen;
++@end
++
++@implementation AnimationDetails
++
++@end;
++
++@implementation CDVKeyboard {
++    AnimationDetails *_animationDetails;
++    BOOL _shouldAnimateWebView;
++}
+ 
+ - (id)settingForKey:(NSString*)key
+ {
+@@ -179,6 +192,8 @@ - (void)shrinkViewKeyboardWillChangeFrame:(NSNotification*)notif
+         screen = full;
+     }
+ 
++    CGFloat currentScreenHeight = self.webView.frame.size.height;
++
+     // Get the intersection of the keyboard and screen and move the webview above it
+     // Note: we check for _shrinkView at this point instead of the beginning of the method to handle
+     // the case where the user disabled shrinkView while the keyboard is showing.
+@@ -189,8 +204,56 @@ - (void)shrinkViewKeyboardWillChangeFrame:(NSNotification*)notif
+         self.webView.scrollView.scrollEnabled = !self.disableScrollingInShrinkView;
+     }
+ 
++    CGFloat newScreenHeight = screen.size.height;
++    // When keyboard will be hidden, willShow and show is triggered again
++    // even though keyboard is already visible, ignoring as early as possible
++    if(newScreenHeight == self.webView.frame.size.height)
++    {
++        if(_shouldAnimateWebView)
++        {
++            _shouldAnimateWebView = NO;
++        }
++        return;
++    }
++
+     // A view's frame is in its superview's coordinate system so we need to convert again
+-    self.webView.frame = [self.webView.superview convertRect:screen fromView:self.webView];
++    if(!_shouldAnimateWebView)
++    {
++        self.webView.frame = [self.webView.superview convertRect:screen fromView:self.webView];
++        return;
++    }
++
++    NSDictionary* userInfo = [notif userInfo];
++    NSNumber *durationValue = userInfo[UIKeyboardAnimationDurationUserInfoKey];
++    NSTimeInterval duration = durationValue.doubleValue;
++
++    // Tell JS that it can start animating with values
++    NSString *javascriptString = [NSString stringWithFormat:@"Keyboard.beginAnimation(%f, %f, %f)", currentScreenHeight, newScreenHeight, duration*1000];
++
++    BOOL isGrowing = newScreenHeight > currentScreenHeight;
++
++    // If webView is growing, change it's frame imediately, so it's content is not clipped during animation
++    if (isGrowing) {
++        self.webView.frame = [self.webView.superview convertRect:screen fromView:self.webView];
++    }
++    [self.commandDelegate evalJs: javascriptString];
++
++    _animationDetails = [[AnimationDetails alloc] init];
++    _animationDetails.from = currentScreenHeight;
++    _animationDetails.to = newScreenHeight;
++    _animationDetails.screen = screen;
++
++    // alternative to using animationComplete but the timer can finish before
++    // the browser is finished animating, thereby clipping the animation
++
++//    __weak typeof(self) weakSelf = self;
++//    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, duration * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
++//        __strong typeof(weakSelf) self = weakSelf;
++//        // If webview was shrinking, change it's frame after animation is complete
++//        if (!isGrowing) {
++//            self.webView.frame = [self.webView.superview convertRect:screen fromView:self.webView];
++//        }
++//    });
+ }
+ 
+ #pragma mark UIScrollViewDelegate
+@@ -243,6 +306,29 @@ - (void)hide:(CDVInvokedUrlCommand*)command
+     [self.webView endEditing:YES];
+ }
+ 
++// JS indicates that it wants to handle Keyboard animation
++- (void)animationStart:(CDVInvokedUrlCommand *)command
++{
++    _shouldAnimateWebView = YES;
++}
++
++// JS indicates that it finished handling Keyboard animation
++- (void)animationComplete:(CDVInvokedUrlCommand*)command
++{
++    if(!_animationDetails)
++    {
++        return;
++    }
++
++    BOOL isGrowing = [_animationDetails from] < [_animationDetails to];
++    // If webview was shrinking, change it's frame after animation is complete
++    if (!isGrowing) {
++        self.webView.frame = [self.webView.superview convertRect:[_animationDetails screen] fromView:self.webView];
++    }
++    _shouldAnimateWebView = NO;
++    _animationDetails = nil;
++}
++
+ #pragma mark dealloc
+ 
+ - (void)dealloc
+diff --git a/www/keyboard.js b/www/keyboard.js
+index 2f3c9f2..74aa25c 100644
+--- a/www/keyboard.js
++++ b/www/keyboard.js
+@@ -70,6 +70,9 @@ Keyboard.fireOnHiding = function() {
+     if(Keyboard.onhiding) {
+ 	Keyboard.onhiding();
+     }
++    if(Keyboard.onKeyboardAnimate) {
++    animationStart();
++    }
+ };
+ 
+ Keyboard.fireOnShowing = function() {
+@@ -78,6 +81,9 @@ Keyboard.fireOnShowing = function() {
+     if(Keyboard.onshowing) {
+ 	Keyboard.onshowing();
+     }
++    if(Keyboard.onKeyboardAnimate) {
++    animationStart();
++    }
+ };
+ 
+ Keyboard.show = function() {
+@@ -88,6 +94,23 @@ Keyboard.hide = function() {
+     exec(null, null, "Keyboard", "hide", []);
+ };
+ 
++var animationStart = function() {
++    exec(null, null, "Keyboard", "animationStart", []);
++};
++
++var animationComplete = function() {
++    exec(null, null, "Keyboard", "animationComplete", []);
++};
++
++Keyboard.beginAnimation = function(from, to, duration) {
++    if(typeof Keyboard.onKeyboardAnimate === 'function') {
++        Keyboard.onKeyboardAnimate(from, to, duration, animationComplete);
++    } else {
++        animationComplete();
++    }
++};
++
++Keyboard.onKeyboardAnimate = null;
+ Keyboard.isVisible = false;
+ Keyboard.automaticScrollToTopOnHiding = false;
+ 
