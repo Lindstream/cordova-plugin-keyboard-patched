@@ -173,7 +173,6 @@ static IMP WKOriginalImp;
 
 - (void)shrinkViewKeyboardWillChangeFrame:(NSNotification*)notif
 {
-    NSLog(@"&&&&&&&&&&&&&&&&&:: setShrinkView : CALLED! ");
     // No-op on iOS 7.0.  It already resizes webview by default, and this plugin is causing layout issues
     // with fixed position elements.  We possibly should attempt to implement shrinkview = false on iOS7.0.
     // iOS 7.1+ behave the same way as iOS 6
@@ -213,7 +212,6 @@ static IMP WKOriginalImp;
     CGRect keyboardIntersection = CGRectIntersection(screen, keyboard);
     if (CGRectContainsRect(screen, keyboardIntersection) && !CGRectIsEmpty(keyboardIntersection) && _shrinkView && self.keyboardIsVisible) {
         screen.size.height -= keyboardIntersection.size.height;
-        NSLog(@"&&&&&&&&&&&&&&&&&:: setShrinkView : Resize required, configuring screen height... %f", screen.size.height );
         self.webView.scrollView.scrollEnabled = !self.disableScrollingInShrinkView;
     }
     
@@ -223,49 +221,12 @@ static IMP WKOriginalImp;
     NSNumber *durationValue = userInfo[UIKeyboardAnimationDurationUserInfoKey];
     NSTimeInterval duration = durationValue.doubleValue;
     
-    // Tell JS that it can start animating with values
+    // Tell JS
     NSString *javascriptString = [NSString stringWithFormat:@"Keyboard.beginAnimation(%f, %f, %f)", currentScreenHeight, newScreenHeight, duration*1000];
     
-    
-    // When keyboard will be hidden, willShow and show is triggered again
-    // even though keyboard is already visible, ignoring as early as possible
-    if(newScreenHeight == self.webView.frame.size.height)
-    {
-        NSLog(@"&&&&&&&&&&&&&&&&&:: setShrinkView : Screenheight is the same... %f", newScreenHeight);
-        
-        if(_shouldAnimateWebView)
-        {
-            NSLog(@"&&&&&&&&&&&&&&&&&:: .... shouldAnimateWebview is TRUE, set to FALSE and... ");
-            _shouldAnimateWebView = NO;
-        }
-        NSLog(@"&&&&&&&&&&&&&&&&&:: .. do nothing!! ");
-        return;
-    }
-    
     [self.commandDelegate evalJs: javascriptString];
-    
+    return;
 
-    _animationDetails = [[AnimationDetails alloc] init];
-    _animationDetails.from = currentScreenHeight;
-    _animationDetails.to = newScreenHeight;
-    _animationDetails.screen = screen;
-    
-
-
-    
-
-    
-    // alternative to using animationComplete but the timer can finish before
-    // the browser is finished animating, thereby clipping the animation
-    
-    //    __weak typeof(self) weakSelf = self;
-    //    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, duration * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-    //        __strong typeof(weakSelf) self = weakSelf;
-    //        // If webview was shrinking, change it's frame after animation is complete
-    //        if (!isGrowing) {
-    //            self.webView.frame = [self.webView.superview convertRect:screen fromView:self.webView];
-    //        }
-    //    });
 }
 
 #pragma mark UIScrollViewDelegate
@@ -321,28 +282,13 @@ static IMP WKOriginalImp;
 // JS indicates that it wants to handle Keyboard animation
 - (void)animationStart:(CDVInvokedUrlCommand *)command
 {
-    NSLog(@"&&&&&&&&&&&&&&&&&:: AnimationStart called!! ");
     _shouldAnimateWebView = YES;
 }
 
 // JS indicates that it finished handling Keyboard animation
 - (void)animationComplete:(CDVInvokedUrlCommand*)command
 {
-    NSLog(@"&&&&&&&&&&&&&&&&&:: AnimationComplete called !! ");
-    if(!_animationDetails)
-    {
-        //NSLog(@"&&&&&&&&&&&&&&&&&:: AnimationComplete DETAILS MISSING - RETURNING !! ");
-        return;
-    }
-    
-    BOOL isGrowing = [_animationDetails from] < [_animationDetails to];
-    // If webview was shrinking, change it's frame after animation is complete
-    if (!isGrowing) {
-        //NSLog(@"&&&&&&&&&&&&&&&&&:: AnimationComplete : MAKE VIEW SMALLER : Dispatch new screen size !! ");
-        //self.webView.frame = [self.webView.superview convertRect:[_animationDetails screen] fromView:self.webView];
-    }
-    _shouldAnimateWebView = NO;
-    _animationDetails = nil;
+    return;
 }
 
 #pragma mark dealloc
