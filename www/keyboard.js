@@ -26,16 +26,28 @@ var argscheck = require('cordova/argscheck'),
 var Keyboard = function() {
 };
 
-Keyboard.shrinkView = function(shrink) {
-    exec(null, null, "Keyboard", "shrinkView", [shrink]);
+Keyboard.shrinkView = function(shrink, success) {
+    if (shrink !== null && shrink !== undefined) {
+        exec(success, null, "Keyboard", "shrinkView", [shrink]);
+    } else {
+        exec(success, null, "Keyboard", "shrinkView", []);
+    }
 };
 
-Keyboard.hideFormAccessoryBar = function(hide) {
-    exec(null, null, "Keyboard", "hideFormAccessoryBar", [hide]);
+Keyboard.hideFormAccessoryBar = function(hide, success) {
+    if (hide !== null && hide !== undefined){
+        exec(success, null, "Keyboard", "hideFormAccessoryBar", [hide]);
+    } else {
+        exec(success, null, "Keyboard", "hideFormAccessoryBar", []);
+    }
 };
 
-Keyboard.disableScrollingInShrinkView = function(disable) {
-    exec(null, null, "Keyboard", "disableScrollingInShrinkView", [disable]);
+Keyboard.disableScrollingInShrinkView = function(disable, success) {
+    if (disable !== null && disable !== undefined) {
+        exec(success, null, "Keyboard", "disableScrollingInShrinkView", [disable]);
+    } else {
+        exec(success, null, "Keyboard", "disableScrollingInShrinkView", []);
+    }
 };
 
 Keyboard.fireOnShow = function() {
@@ -43,7 +55,7 @@ Keyboard.fireOnShow = function() {
     cordova.fireWindowEvent('keyboardDidShow');
 
     if(Keyboard.onshow) {
-	Keyboard.onshow();
+    Keyboard.onshow();
     }
 };
 
@@ -52,7 +64,7 @@ Keyboard.fireOnHide = function() {
     cordova.fireWindowEvent('keyboardDidHide');
 
     if(Keyboard.onhide) {
-	Keyboard.onhide();
+    Keyboard.onhide();
     }
 };
 
@@ -68,7 +80,7 @@ Keyboard.fireOnHiding = function() {
     cordova.fireWindowEvent('keyboardWillHide');
 
     if(Keyboard.onhiding) {
-	Keyboard.onhiding();
+    Keyboard.onhiding();
     }
     if(Keyboard.onKeyboardAnimate) {
     animationStart();
@@ -79,7 +91,7 @@ Keyboard.fireOnShowing = function() {
     cordova.fireWindowEvent('keyboardWillShow');
 
     if(Keyboard.onshowing) {
-	Keyboard.onshowing();
+    Keyboard.onshowing();
     }
     if(Keyboard.onKeyboardAnimate) {
     animationStart();
